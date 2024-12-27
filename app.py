@@ -5,8 +5,19 @@ import pandas as pd
 from src.models.db_models import db_models
 from db import fetch_Nifty_All_stocks, fetch_Nifty_50_stocks, fetch_Nifty_100_stocks, fetch_Nifty_200_stocks, fetch_Nifty_500_stocks
 from concurrent.futures import ThreadPoolExecutor
+from flask_cors import CORS
 
 app = Flask(__name__)
+
+CORS(app, resources={
+    r"/api/*": {  # Apply to all routes under /api/
+        "origins": ["*"],  # Allow your frontend origin
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True  # If you need to support credentials
+    }
+})
+
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tradesight.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
