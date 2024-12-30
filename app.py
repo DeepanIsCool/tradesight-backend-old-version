@@ -6,6 +6,7 @@ from src.models.db_models import db_models
 from db import fetch_Nifty_All_stocks, fetch_Nifty_50_stocks, fetch_Nifty_100_stocks, fetch_Nifty_200_stocks, fetch_Nifty_500_stocks
 from concurrent.futures import ThreadPoolExecutor
 from flask_cors import CORS
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -202,6 +203,40 @@ def top_volume():
     
     except Exception as e:
         return jsonify({"status": "Failure", "message": str(e)}), 500
+    
+def get_last_trading_day(history):
+    """Returns the most recent trading day's close and the previous close."""
+    # Sort the history by date and get the last two trading days
+    valid_days = history.sort_index().tail(2)
+    if len(valid_days) < 2:
+        return None, None  # Insufficient data
+    return valid_days['Close'].iloc[-1], valid_days['Close'].iloc[-2]
+    
+@app.route('/api/indices-data', methods=['GET'])
+def get_indices_data():
+    indices = {
+        "NIFTY 50": "^NSEI",
+        "BANKNIFTY": "^NSEBANK",
+        "SENSEX": "^BSESN"
+    }
+    
+    data = []
+    # Fetch history for the last 5 days to cover weekends and holidays
+    today = datetime.now().date()
+    start_date = today - timedelta(days=7)
+    
+    for name, symbol in indices.items():
+        ticker = yf.Ticker(symbol)
+        hist = ticker.history(start=start_date.strftime('%Y-%m-%d'), end=today.strftime('%Y-%m-%d'))
+        print(hist)  # Debug print to verify the data
+        
+        if not hist.empty:
+            last_close, prev_close = get_last_trading_day(hist)
+            if last_close is not None and prev_close is not None:
+                change = round(((last_close - prev_close) / prev_close) * 100, 2) if prev_close != 0 else 0.0
+                data.append({"name": name, "change": change})
+    
+    return jsonify(data)
 
 
 if __name__ == '__main__':
