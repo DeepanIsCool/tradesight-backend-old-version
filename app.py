@@ -5,6 +5,7 @@ import pandas as pd
 from src.models.db_models import db_models
 from db import fetch_Nifty_All_stocks, fetch_Nifty_50_stocks, fetch_Nifty_100_stocks, fetch_Nifty_200_stocks, fetch_Nifty_500_stocks
 from concurrent.futures import ThreadPoolExecutor
+from src.controllers.prev_day_stock_data import get_prev_day_data
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///tradesight.db'
@@ -187,6 +188,20 @@ def top_volume():
         return jsonify({
             "status": "success", 
             "data": top_volume
+        }), 200
+    
+    except Exception as e:
+        return jsonify({"status": "Failure", "message": str(e)}), 500
+    
+
+@app.route('/api/previous_day_gains_by_bot')
+def previous_day_gains_by_symbol():
+    try:
+        data = get_prev_day_data()
+        
+        return jsonify({
+            "status": "success",
+            "data": data
         }), 200
     
     except Exception as e:
