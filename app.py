@@ -9,6 +9,9 @@ from flask_cors import CORS
 from datetime import datetime, timedelta
 from src.controllers.prev_day_stock_data import get_prev_day_data
 from src.controllers.last_trading_day_data import get_last_trading_day
+import requests
+import re
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -245,6 +248,79 @@ def get_indices_data():
                 data.append({"name": name, "change": change})
     
     return jsonify(data)
+
+@app.route('/api/company-details', methods=['GET'])
+def get_company_details():
+    company_name = request.args.get('company') 
+    
+    if not company_name:
+        return jsonify({"status": "Failure", "message": "Company name is required"}), 400
+    
+    try:
+        search_url = f"https://ticker.finology.in/company/{company_name}"
+        page=requests.get(search_url)
+        page.raise_for_status()
+        soup=BeautifulSoup(page.text,'html.parser')
+
+        table=soup.find('div',id="mainContent_updAddRatios")
+        if not table:
+            return jsonify({'error': 'Unable to find the data section on the webpage. Verify the company name.'}), 404
+        ratios=table.find_all('div')
+        
+        company_details = {}
+        for ratio in ratios:
+            try:
+                key = ratio.find('small').text.strip()
+                value = ratio.find('p').text.strip()
+                key = key.replace('\xa0', ' ').strip()
+                value = value.replace('\xa0', '').replace('\r', '').replace('\n', '').strip()
+                company_details[key] = value
+            except AttributeError:
+                continue
+        cleaned_details = {}
+        for key, value in company_details.items():
+            cleaned_value = re.sub(r'\s+', ' ', value).strip()
+            cleaned_details[key] = cleaned_value
+
+        return jsonify({'company_details': cleaned_details}), 200
+    
+    except requests.exceptions.HTTPError as http_err:
+        return jsonify({'error': f'HTTP error occurred: {http_err}'}), 500
+
+    except Exception as e:
+        return jsonify({"status": "Failure", "message": str(e)}), 500
+    
+@app.route('/api/price-summery', methods=['GET'])
+def get_price_summery():
+    company_name = request.args.get('company') 
+    
+    if not company_name:
+        return jsonify({"status": "Failure", "message": "Company name is required"}), 400
+    
+    try:
+        search_url = f"https://ticker.finology.in/company/{company_name}"
+        page=requests.get(search_url)
+        page.raise_for_status()
+        soup=BeautifulSoup(page.text,'html.parser')
+
+        table=soup.find('div',id="mainContent_pricesummary").find('div',class_="row no-gutters")
+        if not table:
+            return jsonify({'error': 'Unable to find the data section on the webpage. Verify the company name.'}), 404
+        table_details=table.find_all('div',class_="col-6 col-md-3 compess")
+        
+        price_details={}
+        for detail in table_details:
+            key=detail.find('small').text.strip()
+            value=detail.find('p').text.strip().replace('\xa0', '')
+            price_details[key]=value
+
+        return jsonify({'price_details': price_details}), 200
+    
+    except requests.exceptions.HTTPError as http_err:
+        return jsonify({'error': f'HTTP error occurred: {http_err}'}), 500
+
+    except Exception as e:
+        return jsonify({"status": "Failure", "message": str(e)}), 500
 
 
 if __name__ == '__main__':
