@@ -321,6 +321,56 @@ def get_price_summery():
 
     except Exception as e:
         return jsonify({"status": "Failure", "message": str(e)}), 500
+    
+
+# for investors details
+def capitalize_words(text):
+    return text.title()
+
+def extract_table_data_with_headers(table):
+    headers = [capitalize_words(header.text.strip()) for header in table.find("thead").find_all("th")]
+    
+    rows = table.find("tbody").find_all("tr")
+    data = [headers]  
+    for row in rows:
+        cols = [capitalize_words(col.text.strip()) for col in row.find_all("td")]
+        data.append(cols)
+    return data
+
+def scrape_data(url):
+    page = requests.get(url)
+    soup = BeautifulSoup(page.text, 'html.parser')
+
+    promoter_tab = soup.find("div", id="pills-Promoter")
+    promoter_table = promoter_tab.find("table") if promoter_tab else None
+    promoter_data = []
+    if promoter_table:
+        promoter_data = extract_table_data_with_headers(promoter_table)
+
+    investor_tab = soup.find("div", id="pills-Investors")
+    investor_table = investor_tab.find("table") if investor_tab else None
+    investor_data = []
+    if investor_table:
+        investor_data = extract_table_data_with_headers(investor_table)
+
+    output = {
+        "Promoter": promoter_data,
+        "Investor": investor_data
+    }
+    return output
+
+@app.route('/api/investors-details', methods=['GET'])
+def scrape():
+    company_name = request.args.get('company')
+    if not company_name:
+        return jsonify({"status": "Failure", "message": "Company name is required"}), 400
+
+    try:
+        url = f"https://ticker.finology.in/company/{company_name}"
+        data = scrape_data(url)
+        return jsonify(data), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == '__main__':
