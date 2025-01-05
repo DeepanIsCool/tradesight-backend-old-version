@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
+from concurrent.futures import ThreadPoolExecutor
 
 def get_prev_day_data():
     def calculate_macd(close_prices, fast_period=12, slow_period=26, signal_period=9):
@@ -150,24 +151,24 @@ def get_prev_day_data():
         }
 
         results = {}
-        for symbol in get_top_stocks():
-            # Get stock data for the last trading day
-            start_date = last_trading_day
-            end_date = last_trading_day + timedelta(days=1)
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = []
+            for symbol in get_top_stocks():
+                # Get stock data for the last trading day
+                start_date = last_trading_day
+                end_date = last_trading_day + timedelta(days=1)
 
-            df = get_stock_data(symbol, start_date, end_date)
-            if df is None or df.empty:
-                continue
+                futures.append(executor.submit(get_stock_data, symbol, start_date, end_date))
 
-            # Calculate indicators
-            df = calculate_indicators(df)
+            for future, symbol in zip(futures, get_top_stocks()):
+                df = future.result()
+                if df is None or df.empty:
+                    continue
+                df = calculate_indicators(df)
+                weights = stock_weights.get(symbol, {'macd': 0.5, 'rsi': 0.5})
+                df = generate_signals(df, weights)
+                results[symbol] = df[['Close', 'macd', 'macd_signal', 'rsi', 'buy_signal', 'sell_signal']].to_dict(orient='records')
 
-            # Generate signals
-            weights = stock_weights.get(symbol, {'macd': 0.5, 'rsi': 0.5})
-            df = generate_signals(df, weights)
-
-            # Convert to JSON-serializable format
-            results[symbol] = df[['Close', 'macd', 'macd_signal', 'rsi', 'buy_signal', 'sell_signal']].to_dict(orient='records')
         return results
 
     
