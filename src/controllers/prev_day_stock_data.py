@@ -68,12 +68,25 @@ def get_prev_day_data():
 
         return df
 
-    def generate_signals(df):
-        """Generate buy and sell signals based on conditions"""
-        df['buy_signal'] = (df['macd'].shift(1) < df['macd_signal'].shift(1)) & (df['macd'] >= df['macd_signal']) & (df['rsi'] < 30)
-        df['sell_signal'] = (df['macd'].shift(1) > df['macd_signal'].shift(1)) & (df['macd'] <= df['macd_signal']) & (df['rsi'] > 70)
+    def generate_signals(df, weights):
+
+        macd_weight = weights['macd']
+        rsi_weight = weights['rsi']
+        
+        # Generate buy signals: Weighted conditions for MACD crossover and RSI < 30
+        df['buy_signal'] = (
+            (df['macd'].shift(1) < df['macd_signal'].shift(1)) & (df['macd'] >= df['macd_signal']) * macd_weight +
+            (df['rsi'] < 30) * rsi_weight
+        ) >= 1  # Ensure the combined weighted score is at least 1
+
+        # Generate sell signals: Weighted conditions for MACD crossover and RSI > 70
+        df['sell_signal'] = (
+            (df['macd'].shift(1) > df['macd_signal'].shift(1)) & (df['macd'] <= df['macd_signal']) * macd_weight +
+            (df['rsi'] > 70) * rsi_weight
+        ) >= 1  # Ensure the combined weighted score is at least 1
 
         return df
+
 
     def execute_trades(results):
         """Simulate trades with 1 lakh capital based on buy/sell signals"""
@@ -112,15 +125,37 @@ def get_prev_day_data():
         return trade_results
 
     def trade_stocks():
-        # Set dates
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=1)
+        # Get the last trading day's date
+        today = datetime.now()
+        stock = yf.Ticker("RELIANCE.NS")  # Use a reliable stock symbol to get trading dates
+        trading_data = stock.history(period="5d")  # Fetch the last 5 days' data
+        last_trading_day = trading_data.index[-1].date()  # Get the most recent trading day
+
+        stock_weights = {
+            'RELIANCE.NS': {'macd': 0.6, 'rsi': 0.4},
+            'TCS.NS': {'macd': 0.5, 'rsi': 0.5},
+            'HDFCBANK.NS': {'macd': 0.4, 'rsi': 0.6},
+            'ICICIBANK.NS': {'macd': 0.6, 'rsi': 0.4},
+            'HINDUNILVR.NS': {'macd': 0.5, 'rsi': 0.5},
+            'INFY.NS': {'macd': 0.4, 'rsi': 0.6},
+            'SUNPHARMA.NS': {'macd': 0.6, 'rsi': 0.4},
+            'ITC.NS': {'macd': 0.5, 'rsi': 0.5},
+            'SBIN.NS': {'macd': 0.4, 'rsi': 0.6},
+            'BHARTIARTL.NS': {'macd': 0.5, 'rsi': 0.5},
+            'KOTAKBANK.NS': {'macd': 0.6, 'rsi': 0.4},
+            'BAJFINANCE.NS': {'macd': 0.5, 'rsi': 0.5},
+            'LICI.NS': {'macd': 0.4, 'rsi': 0.6},
+            'LT.NS': {'macd': 0.5, 'rsi': 0.5},
+            'M&M.NS': {'macd': 0.4, 'rsi': 0.6}
+        }
 
         results = {}
-        for symbol in get_top_stocks():            
-            # Get stock data
+        for symbol in get_top_stocks():
+            # Get stock data for the last trading day
+            start_date = last_trading_day
+            end_date = last_trading_day + timedelta(days=1)
+
             df = get_stock_data(symbol, start_date, end_date)
-            df.to_csv('stock_data.csv', index=True)
             if df is None or df.empty:
                 continue
 
@@ -128,12 +163,14 @@ def get_prev_day_data():
             df = calculate_indicators(df)
 
             # Generate signals
-            df = generate_signals(df)
+            weights = stock_weights.get(symbol, {'macd': 0.5, 'rsi': 0.5})
+            df = generate_signals(df, weights)
 
             # Convert to JSON-serializable format
             results[symbol] = df[['Close', 'macd', 'macd_signal', 'rsi', 'buy_signal', 'sell_signal']].to_dict(orient='records')
 
         return results
+
     
     def calculate_total_investment_and_returns(trade_results):
         """Calculate total investment and returns across all trades"""
