@@ -95,6 +95,8 @@ def get_prev_day_data():
         balance = initial_capital
         portfolio = []
         trades = []
+        profitable_trades = 0
+        entry_price = 0
         
         for i in range(len(df)):
             signal = df['final_signal'].iloc[i]
@@ -104,6 +106,7 @@ def get_prev_day_data():
                 shares = int(balance / price)
                 if shares > 0:
                     position = shares
+                    entry_price = price
                     balance -= shares * price
                     trades.append({
                         'date': df.index[i],
@@ -113,12 +116,17 @@ def get_prev_day_data():
                     })
             
             elif signal == -1 and position > 0:  # Sell signal
+                profit = position * (price - entry_price)
+                if profit > 0:
+                    profitable_trades += 1
+                    
                 balance += position * price
                 trades.append({
                     'date': df.index[i],
                     'type': 'sell',
                     'shares': position,
-                    'price': price
+                    'price': price,
+                    'profit': profit
                 })
                 position = 0
             
@@ -129,18 +137,21 @@ def get_prev_day_data():
                 'portfolio_value': portfolio_value
             })
         
+        # Calculate success rate
+        total_trades = len([t for t in trades if t['type'] == 'sell' or t['type'] == 'buy'])
+        success_rate = (profitable_trades / total_trades * 100) if total_trades > 0 else 0
+        
         # Return early with empty DataFrames if no trades occurred
         if len(trades) == 0:
-            return pd.DataFrame(portfolio).set_index('date'), pd.DataFrame()
+            return pd.DataFrame(portfolio).set_index('date'), pd.DataFrame(), 0, 0
         
-        # Only try to set index if trades exist
+        # Create DataFrames
         portfolio_df = pd.DataFrame(portfolio).set_index('date')
         trades_df = pd.DataFrame(trades)
         if not trades_df.empty:
             trades_df = trades_df.set_index('date')
             
-        return portfolio_df, trades_df
-
+        return portfolio_df, trades_df, profitable_trades, success_rate
 
     def trade_stocks():
         # Set dates
@@ -181,11 +192,13 @@ def get_prev_day_data():
             df = generate_signals(df, weights)
             
             # Backtest
-            portfolio_df, trades_df = backtest_strategy(df)
+            portfolio_df, trades_df, profitable_trades, success_rate = backtest_strategy(df)
             
             results[symbol] = {
                 'portfolio': portfolio_df,
-                'trades': trades_df
+                'trades': trades_df,
+                'profitable_trades': profitable_trades,
+                'success_rate': success_rate
             }
         
         return results
@@ -197,11 +210,15 @@ def get_prev_day_data():
         final_value = data['portfolio']['portfolio_value'].iloc[-1]
         returns = (final_value - initial_value) / initial_value * 100
         num_trades = len(data['trades'])
+        profitable_trades = data['profitable_trades']
+        success_rate = data['success_rate']
         
         return {
             'symbol': symbol,
             'returns': returns,
-            'num_trades': num_trades
+            'num_trades': num_trades,
+            'profitable_trades': profitable_trades,
+            'success_rate': success_rate
         }
 
     results = trade_stocks()
