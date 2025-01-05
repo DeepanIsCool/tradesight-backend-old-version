@@ -87,7 +87,6 @@ def get_prev_day_data():
 
         return df
 
-
     def execute_trades(results):
         """Simulate trades with 1 lakh capital based on buy/sell signals"""
         trade_results = []
@@ -123,6 +122,7 @@ def get_prev_day_data():
             })
 
         return trade_results
+
 
     def trade_stocks():
         # Get the last trading day's date
@@ -168,7 +168,6 @@ def get_prev_day_data():
 
             # Convert to JSON-serializable format
             results[symbol] = df[['Close', 'macd', 'macd_signal', 'rsi', 'buy_signal', 'sell_signal']].to_dict(orient='records')
-
         return results
 
     
