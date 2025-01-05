@@ -2,7 +2,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor
 
 def get_prev_day_data():
     def calculate_macd(close_prices, fast_period=12, slow_period=26, signal_period=9):
@@ -10,47 +9,51 @@ def get_prev_day_data():
         # Calculate EMAs
         exp1 = close_prices.ewm(span=fast_period, adjust=False).mean()
         exp2 = close_prices.ewm(span=slow_period, adjust=False).mean()
-        
+
         # Calculate MACD line
         macd = exp1 - exp2
-        
+
         # Calculate signal line
         signal = macd.ewm(span=signal_period, adjust=False).mean()
-        
-        # Calculate histogram
-        hist = macd - signal
-        
-        return macd, signal, hist
+
+        return macd, signal
 
     def calculate_rsi(close_prices, period=14):
         """Calculate RSI without using TA-Lib"""
         # Calculate price changes
         delta = close_prices.diff()
-        
+
         # Split gains and losses
         gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
-        
+
         # Calculate RS
         rs = gain / loss
-        
+
         # Calculate RSI
         rsi = 100 - (100 / (1 + rs))
-        
+
         return rsi
 
     def get_top_stocks():
-        """Get top 10 stocks by market cap from NSE"""
-        # You might want to replace this with actual top stocks
-        return ["RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "ICICIBANK.NS", "HINDUNILVR.NS", 
-                "INFY.NS", "SUNPHARMA.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", 
-                "KOTAKBANK.NS", "BAJFINANCE.NS", "LICI.NS", "LT.NS", "M&M.NS"]
+
+        return [
+            "ADANIGREEN.NS", "ADANIPORTS.NS", "APOLLOHOSP.NS", "ASIANPAINT.NS", "AXISBANK.NS",
+            "BAJAJ-AUTO.NS", "BAJFINANCE.NS", "BAJAJFINSV.NS", "BEL.NS", "BPCL.NS", "BHARTIARTL.NS",
+            "BRITANNIA.NS", "CIPLA.NS", "COALINDIA.NS", "DRREDDY.NS", "EICHERMOT.NS", "GRASIM.NS",
+            "HCLTECH.NS", "HDFCBANK.NS", "HDFCLIFE.NS", "HEROMOTOCO.NS", "HINDALCO.NS", "HINDUNILVR.NS",
+            "ICICIBANK.NS", "ITC.NS", "INDUSINDBK.NS", "INFY.NS", "JSWSTEEL.NS", "KOTAKBANK.NS",
+            "LT.NS", "M&M.NS", "MARUTI.NS", "NTPC.NS", "NESTLEIND.NS", "ONGC.NS", "POWERGRID.NS",
+            "RELIANCE.NS", "SBILIFE.NS", "SHRIRAMFIN.NS", "SBIN.NS", "SUNPHARMA.NS", "TCS.NS",
+            "TATACONSUM.NS", "TATAMOTORS.NS", "TATASTEEL.NS", "TECHM.NS", "TITAN.NS", "TRENT.NS",
+            "ULTRACEMCO.NS", "WIPRO.NS"
+        ]
 
     def get_stock_data(symbol, start_date, end_date):
         """Fetch 1-minute stock data from yfinance"""
         try:
             stock = yf.Ticker(symbol)
-            df = stock.history(start=start_date, end=end_date, interval='1m')
+            df = stock.history(start=start_date, end=end_date, interval='5m')
             return df
         except Exception as e:
             return None
@@ -58,107 +61,76 @@ def get_prev_day_data():
     def calculate_indicators(df):
         """Calculate MACD and RSI indicators"""
         # Calculate MACD
-        df['macd'], df['macd_signal'], df['macd_hist'] = calculate_macd(df['Close'])
-        
+        df['macd'], df['macd_signal'] = calculate_macd(df['Close'])
+
         # Calculate RSI
         df['rsi'] = calculate_rsi(df['Close'])
-        
+
         return df
 
-    def generate_signals(df, stock_weights):
-        """Generate trading signals using weighted MACD and RSI"""
-        macd_weight = stock_weights['macd']
-        rsi_weight = stock_weights['rsi']
+    def generate_signals(df, weights):
+
+        macd_weight = weights['macd']
+        rsi_weight = weights['rsi']
         
-        # MACD signals (-1, 0, 1)
-        df['macd_signal'] = np.where(df['macd'] > df['macd_signal'], 1,
-                                    np.where(df['macd'] < df['macd_signal'], -1, 0))
-        
-        # RSI signals (-1, 0, 1)
-        df['rsi_signal'] = np.where(df['rsi'] > 70, -1,
-                                np.where(df['rsi'] < 30, 1, 0))
-        
-        # Combine signals using weights and tanh
-        df['combined_signal'] = np.tanh(
-            macd_weight * df['macd_signal'] + rsi_weight * df['rsi_signal']
-        )
-        
-        # Convert to discrete signals
-        df['final_signal'] = np.where(df['combined_signal'] > 0.5, 1,
-                                    np.where(df['combined_signal'] < -0.5, -1, 0))
-        
+        # Generate buy signals: Weighted conditions for MACD crossover and RSI < 30
+        df['buy_signal'] = (
+            (df['macd'].shift(1) < df['macd_signal'].shift(1)) & (df['macd'] >= df['macd_signal']) * macd_weight +
+            (df['rsi'] < 30) * rsi_weight
+        ) >= 1  # Ensure the combined weighted score is at least 1
+
+        # Generate sell signals: Weighted conditions for MACD crossover and RSI > 70
+        df['sell_signal'] = (
+            (df['macd'].shift(1) > df['macd_signal'].shift(1)) & (df['macd'] <= df['macd_signal']) * macd_weight +
+            (df['rsi'] > 70) * rsi_weight
+        ) >= 1  # Ensure the combined weighted score is at least 1
+
         return df
 
-    def backtest_strategy(df, initial_capital=100000):
-        """Backtest the trading strategy"""
-        position = 0
-        balance = initial_capital
-        portfolio = []
-        trades = []
-        profitable_trades = 0
-        entry_price = 0
-        
-        for i in range(len(df)):
-            signal = df['final_signal'].iloc[i]
-            price = df['Close'].iloc[i]
-            
-            if signal == 1 and position == 0:  # Buy signal
-                shares = int(balance / price)
-                if shares > 0:
-                    position = shares
-                    entry_price = price
-                    balance -= shares * price
-                    trades.append({
-                        'date': df.index[i],
-                        'type': 'buy',
-                        'shares': shares,
-                        'price': price
-                    })
-            
-            elif signal == -1 and position > 0:  # Sell signal
-                profit = position * (price - entry_price)
-                if profit > 0:
-                    profitable_trades += 1
-                    
-                balance += position * price
-                trades.append({
-                    'date': df.index[i],
-                    'type': 'sell',
-                    'shares': position,
-                    'price': price,
-                    'profit': profit
-                })
-                position = 0
-            
-            # Calculate portfolio value
-            portfolio_value = balance + (position * price)
-            portfolio.append({
-                'date': df.index[i],
-                'portfolio_value': portfolio_value
+    def execute_trades(results):
+        """Simulate trades with 1 lakh capital based on buy/sell signals"""
+        trade_results = []
+
+        for symbol, data in results.items():
+            capital = 100000  # Starting capital
+            position = 0  # Current stock holding
+            num_trades = 0
+            profitable_trades = 0
+
+            for record in data:
+                if record['buy_signal'] and capital > 0:
+                    position = capital / record['Close']  # Buy stocks
+                    capital = 0
+                    num_trades += 1
+
+                elif record['sell_signal'] and position > 0:
+                    capital = position * record['Close']  # Sell stocks
+                    position = 0
+                    num_trades += 1
+                    if capital > 100000:
+                        profitable_trades += 1
+
+            final_returns = (capital + position * (data[-1]['Close'] if position > 0 else 0)) / 100000
+            success_rate = (profitable_trades / num_trades * 100) if num_trades > 0 else 0
+
+            trade_results.append({
+                "symbol": symbol,
+                "num_trades": num_trades,
+                "profitable_trades": profitable_trades,
+                "returns": final_returns,
+                "success_rate": success_rate
             })
-        
-        # Calculate success rate
-        total_trades = len([t for t in trades if t['type'] == 'sell' or t['type'] == 'buy'])
-        success_rate = (profitable_trades / total_trades * 100) if total_trades > 0 else 0
-        
-        # Return early with empty DataFrames if no trades occurred
-        if len(trades) == 0:
-            return pd.DataFrame(portfolio).set_index('date'), pd.DataFrame(), 0, 0
-        
-        # Create DataFrames
-        portfolio_df = pd.DataFrame(portfolio).set_index('date')
-        trades_df = pd.DataFrame(trades)
-        if not trades_df.empty:
-            trades_df = trades_df.set_index('date')
-            
-        return portfolio_df, trades_df, profitable_trades, success_rate
+
+        return trade_results
+
 
     def trade_stocks():
-        # Set dates
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=1)
-        
-        # Stock-specific weights (example)
+        # Get the last trading day's date
+        today = datetime.now()
+        stock = yf.Ticker("RELIANCE.NS")  # Use a reliable stock symbol to get trading dates
+        trading_data = stock.history(period="5d")  # Fetch the last 5 days' data
+        last_trading_day = trading_data.index[-1].date()  # Get the most recent trading day
+
         stock_weights = {
             'RELIANCE.NS': {'macd': 0.6, 'rsi': 0.4},
             'TCS.NS': {'macd': 0.5, 'rsi': 0.5},
@@ -176,55 +148,60 @@ def get_prev_day_data():
             'LT.NS': {'macd': 0.5, 'rsi': 0.5},
             'M&M.NS': {'macd': 0.4, 'rsi': 0.6}
         }
-        
+
         results = {}
-        for symbol in get_top_stocks():            
-            # Get stock data
+        for symbol in get_top_stocks():
+            # Get stock data for the last trading day
+            start_date = last_trading_day
+            end_date = last_trading_day + timedelta(days=1)
+
             df = get_stock_data(symbol, start_date, end_date)
-            if df is None:
+            if df is None or df.empty:
                 continue
-                
+
             # Calculate indicators
             df = calculate_indicators(df)
-            
+
             # Generate signals
             weights = stock_weights.get(symbol, {'macd': 0.5, 'rsi': 0.5})
             df = generate_signals(df, weights)
-            
-            # Backtest
-            portfolio_df, trades_df, profitable_trades, success_rate = backtest_strategy(df)
-            
-            results[symbol] = {
-                'portfolio': portfolio_df,
-                'trades': trades_df,
-                'profitable_trades': profitable_trades,
-                'success_rate': success_rate
-            }
-        
+
+            # Convert to JSON-serializable format
+            results[symbol] = df[['Close', 'macd', 'macd_signal', 'rsi', 'buy_signal', 'sell_signal']].to_dict(orient='records')
         return results
 
-
-    def process_stock_result(symbol_data):
-        symbol, data = symbol_data
-        initial_value = data['portfolio']['portfolio_value'].iloc[0]
-        final_value = data['portfolio']['portfolio_value'].iloc[-1]
-        returns = (final_value - initial_value) / initial_value * 100
-        num_trades = len(data['trades'])
-        profitable_trades = data['profitable_trades']
-        success_rate = data['success_rate']
+    
+    def calculate_total_investment_and_returns(trade_results):
+        """Calculate total investment and returns across all trades"""
+        total_investment = len(trade_results) * 100000  # 1 lakh per stock
+        total_returns = sum(result['returns'] * 100000 for result in trade_results)
+        
+        # Calculate total trades and profitable trades
+        total_trades = sum(result['num_trades'] for result in trade_results)
+        total_profitable_trades = sum(result['profitable_trades'] for result in trade_results)
+        
+        # Calculate success rate
+        success_rate = (total_profitable_trades / total_trades * 100) if total_trades > 0 else 0
         
         return {
-            'symbol': symbol,
-            'returns': returns,
-            'num_trades': num_trades,
-            'profitable_trades': profitable_trades,
+            'total_investment': total_investment,
+            'total_returns': total_returns,
+            'net_profit_loss': total_returns - total_investment,
+            'total_trades': total_trades,
+            'total_profitable_trades': total_profitable_trades,
             'success_rate': success_rate
         }
 
     results = trade_stocks()
-
-    # Process results using ThreadPoolExecutor
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        stock_results = list(executor.map(process_stock_result, results.items()))
-
-    return stock_results
+    # df = pd.DataFrame(results)
+    # df.to_csv('results.csv', index=False)
+    trade_results = execute_trades(results)
+    
+    totals = calculate_total_investment_and_returns(trade_results)
+        
+    # Add totals to the response
+    trade_results.append({
+        'summary': totals
+    })
+    
+    return trade_results      
