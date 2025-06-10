@@ -1,1 +1,0 @@
-# TradeSight-Backend
