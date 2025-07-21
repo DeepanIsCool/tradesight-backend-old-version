@@ -17,7 +17,7 @@ async def login(form_data: UserUpdate, db: Session = Depends(get_db)):
     print(user)
     if not user:
         raise HTTPException(status_code=400, detail="Incorrect username or password")
-    if  user.password != form_data.password: # Changed to direct comparison
+    if  user.hashed_password != form_data.password: # Use hashed_password field
         raise HTTPException(status_code=400, detail="Incorrect username or password")
     access_token_expires = timedelta(minutes=int(1000))
     client_id = str(uuid.uuid4())  # Generate a unique client ID
@@ -55,7 +55,13 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     existing_user = db.query(models.User).filter(models.User.username == user.username).first()
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already taken")
-    db_user = models.User(username=user.username, password=user.password, email=user.email) # Store plain password and email
+    
+    # Check if email already exists
+    existing_email = db.query(models.User).filter(models.User.email == user.email).first()
+    if existing_email:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    db_user = models.User(username=user.username, hashed_password=user.password, email=user.email) # Use hashed_password field
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -71,7 +77,7 @@ async def update_user(user_id: int, user: UserUpdate, db: Session = Depends(get_
 
     if user.password:
         # hashed_password = get_password_hash(user.password) # No hashing
-        setattr(db_user, "password", user.password) # Store plain password
+        setattr(db_user, "hashed_password", user.password) # Use hashed_password field
 
     if user.username:
         setattr(db_user, "username", user.username)

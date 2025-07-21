@@ -13,4 +13,4 @@ class PredictionSignal(BaseModel):
     Signal: Literal['Buy', 'Sell', 'Hold'] # Enforce specific values
 
     class Config:
-        orm_mode = True # Enable compatibility with ORM models (like dataframes with .to_dict('records'))
+        from_attributes = True # Enable compatibility with ORM models (like dataframes with .to_dict('records'))

@@ -1,7 +1,7 @@
 import random
 import string
 from fastapi import HTTPException
-from app.schemas.account import AccountProfitResponse
+from app.schemas.profit import AccountProfitResponse
 
 def generate_client_id():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=12))

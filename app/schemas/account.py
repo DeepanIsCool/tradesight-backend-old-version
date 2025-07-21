@@ -8,7 +8,7 @@ class Scrip(BaseModel):
     buyPrice: float
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class Order(BaseModel):
     id: int
@@ -21,7 +21,7 @@ class Order(BaseModel):
     type: str
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class AccountResponse(BaseModel):
     spentCash: int
@@ -30,7 +30,7 @@ class AccountResponse(BaseModel):
     orderBook: List[Order] = []
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class OrderRequest(BaseModel):
     scrip: str

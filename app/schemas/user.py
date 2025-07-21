@@ -4,9 +4,10 @@ from pydantic import BaseModel, constr
 class User(BaseModel):
     id: int
     username: str
+    email: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class UserCreate(BaseModel):
